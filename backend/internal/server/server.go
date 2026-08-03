@@ -3,6 +3,7 @@ package server
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/websocket"
 	"github.com/directvibe/backend/internal/config"
@@ -18,18 +19,35 @@ type Server struct {
 	engine   *matchmaker.Engine
 }
 
+func isAllowedOrigin(origin, frontendURLConfig string) bool {
+	if frontendURLConfig == "*" || frontendURLConfig == "" {
+		return true
+	}
+
+	originClean := strings.TrimRight(strings.ToLower(origin), "/")
+	allowedOrigins := strings.Split(frontendURLConfig, ",")
+
+	for _, allowed := range allowedOrigins {
+		allowedClean := strings.TrimSpace(strings.TrimRight(strings.ToLower(allowed), "/"))
+		if allowedClean == "*" || allowedClean == "" || originClean == allowedClean {
+			return true
+		}
+	}
+	return false
+}
+
 // NewServer initializes the HTTP server with routes and CORS config
 func NewServer(cfg *config.Config, engine *matchmaker.Engine, pool *ws.Pool) *Server {
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 		CheckOrigin: func(r *http.Request) bool {
-			// CORS policy check
-			if cfg.FrontendURL == "*" {
-				return true
-			}
 			origin := r.Header.Get("Origin")
-			return origin == cfg.FrontendURL
+			allowed := isAllowedOrigin(origin, cfg.FrontendURL)
+			if !allowed {
+				log.Printf("WebSocket CheckOrigin rejected origin: %s (configured FRONTEND_URL: %s)", origin, cfg.FrontendURL)
+			}
+			return allowed
 		},
 	}
 
