@@ -1,0 +1,229 @@
+package websocket
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+	"time"
+
+	"github.com/gorilla/websocket"
+	"github.com/directvibe/backend/internal/matchmaker"
+)
+
+const (
+	writeWait      = 10 * time.Second
+	pongWait       = 60 * time.Second
+	pingPeriod     = (pongWait * 9) / 10
+	maxMessageSize = 8192
+)
+
+// Client represents a single user's websocket connection
+type Client struct {
+	id          string
+	conn        *websocket.Conn
+	pool        *Pool
+	engine      *matchmaker.Engine
+	send        chan []byte
+	
+	keywords    []string
+	enqueueTime time.Time
+	
+	// Anti-spam throttling
+	lastSkip    time.Time
+
+	ctx         context.Context
+	cancel      context.CancelFunc
+}
+
+// NewClient creates a new client
+func NewClient(id string, conn *websocket.Conn, pool *Pool, engine *matchmaker.Engine) *Client {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Client{
+		id:     id,
+		conn:   conn,
+		pool:   pool,
+		engine: engine,
+		send:   make(chan []byte, 256),
+		ctx:    ctx,
+		cancel: cancel,
+	}
+}
+
+// --- matchmaker.Client interface implementation ---
+
+func (c *Client) ID() string {
+	return c.id
+}
+func (c *Client) Keywords() []string {
+	return c.keywords
+}
+func (c *Client) EnqueueTime() time.Time {
+	return c.enqueueTime
+}
+func (c *Client) SendMatch(otherID string, offer bool) {
+	msg := map[string]interface{}{
+		"type":     "match_found",
+		"peer_id":  otherID,
+		"is_offer": offer,
+	}
+	b, _ := json.Marshal(msg)
+	
+	select {
+	case c.send <- b:
+	default:
+		// Queue full
+	}
+}
+
+// --- WebSocket lifecycle loops ---
+
+func (c *Client) ReadPump() {
+	defer func() {
+		// Clean up on disconnect
+		c.cancel() // Immediately kill the WritePump goroutine
+		c.engine.RemoveClient(c)
+		c.pool.Unregister(c)
+		c.conn.Close()
+	}()
+
+	c.conn.SetReadLimit(maxMessageSize)
+	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+
+	for {
+		_, message, err := c.conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("error: %v", err)
+			}
+			break
+		}
+		c.handleMessage(message)
+	}
+}
+
+func (c *Client) handleMessage(message []byte) {
+	var payload map[string]interface{}
+	if err := json.Unmarshal(message, &payload); err != nil {
+		return
+	}
+
+	msgType, ok := payload["type"].(string)
+	if !ok {
+		return
+	}
+
+	switch msgType {
+	case "enqueue":
+		c.engine.RemoveClient(c) // Remove if already queued
+		
+		c.keywords = []string{}
+		if kws, ok := payload["keywords"].([]interface{}); ok {
+			for _, kw := range kws {
+				if s, ok := kw.(string); ok {
+					c.keywords = append(c.keywords, s)
+				}
+			}
+		}
+		c.enqueueTime = time.Now()
+		c.engine.AddClient(c)
+
+	case "skip":
+		// Rate Limit: 1.5 seconds server-side
+		if time.Since(c.lastSkip) < 1500*time.Millisecond {
+			return 
+		}
+		c.lastSkip = time.Now()
+		
+		c.engine.RemoveClient(c)
+		
+		// Immediately re-enqueue to find a new match
+		c.enqueueTime = time.Now()
+		c.engine.AddClient(c)
+
+	case "webrtc_signal":
+		targetID, ok := payload["target_id"].(string)
+		if !ok {
+			return
+		}
+		
+		targetClient := c.pool.Get(targetID)
+		if targetClient != nil {
+			relayMsg := map[string]interface{}{
+				"type":      "webrtc_signal",
+				"sender_id": c.id,
+				"signal":    payload["signal"],
+			}
+			b, _ := json.Marshal(relayMsg)
+			select {
+			case targetClient.send <- b:
+			default:
+			}
+		}
+
+	case "chat_message":
+		targetID, ok := payload["target_id"].(string)
+		if !ok {
+			return
+		}
+		
+		targetClient := c.pool.Get(targetID)
+		if targetClient != nil {
+			relayMsg := map[string]interface{}{
+				"type":      "chat_message",
+				"sender_id": c.id,
+				"text":      payload["text"],
+			}
+			b, _ := json.Marshal(relayMsg)
+			select {
+			case targetClient.send <- b:
+			default:
+			}
+		}
+	}
+}
+
+func (c *Client) WritePump() {
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.conn.Close()
+	}()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+			return
+		case message, ok := <-c.send:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if !ok {
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+
+			w, err := c.conn.NextWriter(websocket.TextMessage)
+			if err != nil {
+				return
+			}
+			w.Write(message)
+
+			// Add queued messages
+			n := len(c.send)
+			for i := 0; i < n; i++ {
+				w.Write([]byte{'\n'})
+				w.Write(<-c.send)
+			}
+
+			if err := w.Close(); err != nil {
+				return
+			}
+		case <-ticker.C:
+			// Send heartbeat Keep-Alive Ping
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		}
+	}
+}

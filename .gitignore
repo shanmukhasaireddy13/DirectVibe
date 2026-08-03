@@ -1,0 +1,18 @@
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+.env
+.env.local
+
+# Go / Backend
+bin/
+*.exe
+*.test
+*.out
+vendor/
+
+# OS
+.DS_Store
+Thumbs.db
