@@ -8,6 +8,7 @@ export class WebRTCManager {
   public onConnectionStateChange: ((state: string) => void) | null = null;
   
   public targetPeerId: string | null = null;
+  private candidateQueue: RTCIceCandidateInit[] = [];
 
   async getLocalStream(): Promise<MediaStream> {
     if (!this.localStream) {
@@ -31,6 +32,7 @@ export class WebRTCManager {
 
   createPeerConnection(targetPeerId: string, isOffer: boolean) {
     this.targetPeerId = targetPeerId;
+    this.candidateQueue = [];
     
     // Warm Booting Media Engine - Phase 4 optimization
     this.pc = new RTCPeerConnection({
@@ -82,6 +84,7 @@ export class WebRTCManager {
 
     if (signal.type === 'offer') {
       await this.pc.setRemoteDescription(new RTCSessionDescription(signal));
+      await this.flushCandidateQueue();
       const answer = await this.pc.createAnswer();
       await this.pc.setLocalDescription(answer);
       socket.send('webrtc_signal', {
@@ -90,9 +93,23 @@ export class WebRTCManager {
       });
     } else if (signal.type === 'answer') {
       await this.pc.setRemoteDescription(new RTCSessionDescription(signal));
+      await this.flushCandidateQueue();
     } else if (signal.type === 'candidate') {
-      await this.pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      if (this.pc.remoteDescription) {
+        await this.pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      } else {
+        this.candidateQueue.push(signal.candidate);
+      }
     }
+  }
+
+  private async flushCandidateQueue() {
+    for (const candidate of this.candidateQueue) {
+      if (this.pc) {
+        await this.pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(console.error);
+      }
+    }
+    this.candidateQueue = [];
   }
   
   stopLocalStream() {
