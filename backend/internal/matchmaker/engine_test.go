@@ -95,6 +95,12 @@ func TestEngine_ConcurrencyMemoryLeak(t *testing.T) {
 	if len(engine.index.KeywordMap) != 0 {
 		t.Errorf("Memory Leak: engine.index map is not empty, size: %d", len(engine.index.KeywordMap))
 	}
+	if engine.openList.Size != 0 {
+		t.Errorf("Memory Leak: engine.openList size is not 0, size: %d", engine.openList.Size)
+	}
+	if len(engine.openClients) != 0 {
+		t.Errorf("Memory Leak: engine.openClients map is not empty, size: %d", len(engine.openClients))
+	}
 }
 
 func TestEngine_SpamSkipHandling(t *testing.T) {

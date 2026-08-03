@@ -24,22 +24,28 @@ export function LandingPage() {
   };
 
   return (
-    <div class="landing-page">
-      <div class="landing-card">
-        <div class="hero-text">
-          <h1>DirectVibe</h1>
-          <p>Instant, random video chat.</p>
-        </div>
-        
-        <form onSubmit={addKeyword} style="display: flex; flex-direction: column; gap: 1rem;">
-          <div class="input-group">
+    <div class="hero-section">
+      <div class="hero-content">
+        <h1 class="hero-headline">
+          Connect Instantly.<br/>
+          <span>No Signups.</span>
+        </h1>
+        <p class="hero-subtitle">
+          Jump into seamless, high-quality random video chats. Meet people worldwide based on your shared interests, instantly.
+        </p>
+
+        <form onSubmit={addKeyword} style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+          <div class="hero-input-group">
             <input 
               type="text" 
+              class="hero-input"
               value={keywordInput()} 
               onInput={(e) => setKeywordInput(e.currentTarget.value)}
-              placeholder="Interests (e.g. gaming, music)"
+              placeholder="Enter an interest (e.g. music)"
             />
-            <button type="submit" class="btn">Add</button>
+            <button type="button" class="hero-start-btn" onClick={keywordInput().trim() ? addKeyword : handleStart}>
+              {keywordInput().trim() ? 'Add' : 'Start Chat'}
+            </button>
           </div>
           
           <div class="tags-container">
@@ -47,15 +53,6 @@ export function LandingPage() {
               <span class="tag" onClick={() => removeKeyword(kw)}>{kw} &times;</span>
             ))}
           </div>
-
-          <button 
-            type="button" 
-            class="btn" 
-            style="width: 100%; font-size: 1.125rem; padding: 1rem;" 
-            onClick={handleStart}
-          >
-            Start Chat
-          </button>
         </form>
       </div>
     </div>

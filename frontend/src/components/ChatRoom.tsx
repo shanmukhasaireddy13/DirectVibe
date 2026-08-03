@@ -185,8 +185,19 @@ export function ChatRoom() {
 
   const handlePointerMove = (e: PointerEvent) => {
     if (!isDragging) return;
-    const newLeft = e.clientX - dragOffset.x;
-    const newTop = e.clientY - dragOffset.y;
+    const target = e.currentTarget as HTMLElement;
+    const width = target.offsetWidth || 180;
+    const height = target.offsetHeight || 240;
+
+    let newLeft = e.clientX - dragOffset.x;
+    let newTop = e.clientY - dragOffset.y;
+
+    // Keep within horizontal window bounds
+    newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - width));
+    
+    // Keep within vertical bounds, minimum 64 to not overlap the app header
+    newTop = Math.max(64, Math.min(newTop, window.innerHeight - height));
+
     setPipPos({ left: newLeft, top: newTop });
   };
 
@@ -212,8 +223,8 @@ export function ChatRoom() {
                  <div style="text-align: center;">
                     <h3 style="margin-bottom: 1rem; font-size: 1.5rem;">Ready to chat?</h3>
                     <div style="display: flex; gap: 1rem; justify-content: center;">
-                        <button class="btn" style="font-size: 1.1rem; padding: 0.75rem 2rem;" onClick={handleRestart}>Find Someone</button>
-                        <button class="btn danger" style="font-size: 1.1rem; padding: 0.75rem 2rem;" onClick={handleExit}>Exit to Menu</button>
+                        <button class="btn success" onClick={handleRestart}>Find Someone</button>
+                        <button class="btn danger" onClick={handleExit}>Exit to Menu</button>
                     </div>
                  </div>
               </Show>
@@ -245,7 +256,7 @@ export function ChatRoom() {
         </div>
 
         <div class="controls-bar">
-          <button class="btn stop" onClick={handleStop} disabled={state() === 'stopped'}>
+          <button class="btn warning" onClick={handleStop} disabled={state() === 'stopped'}>
             Stop
           </button>
           <button class="btn danger" onClick={handleSkip} disabled={state() === 'stopped' || isSkipping()}>

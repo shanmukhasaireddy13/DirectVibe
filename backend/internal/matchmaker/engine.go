@@ -28,6 +28,9 @@ type Engine struct {
 	clients     map[string]*Node // Global map: SocketID -> DLL Node
 	events      chan Event       // Buffered channel for Producer-Consumer
 
+	openList    *DLL             // Untagged ("open to anyone") waiters
+	openClients map[string]*Node // SocketID -> openList Node
+
 	strictWait  time.Duration
 	relaxedWait time.Duration
 }
@@ -38,6 +41,8 @@ func NewEngine(strictWaitSec, relaxedWaitSec int) *Engine {
 		queue:       NewDLL(),
 		index:       NewIndex(),
 		clients:     make(map[string]*Node),
+		openList:    NewDLL(),
+		openClients: make(map[string]*Node),
 		events:      make(chan Event, 2048), // Large buffer to decouple network I/O
 		strictWait:  time.Duration(strictWaitSec) * time.Second,
 		relaxedWait: time.Duration(relaxedWaitSec) * time.Second,
@@ -83,6 +88,8 @@ func (e *Engine) handleAdd(c Client) {
 
 	if len(c.Keywords()) > 0 {
 		e.index.Add(c.Keywords(), node)
+	} else {
+		e.openClients[c.ID()] = e.openList.PushBack(c)
 	}
 }
 
@@ -101,6 +108,9 @@ func (e *Engine) cleanupNode(node *Node) {
 
 	if len(node.Client.Keywords()) > 0 {
 		e.index.Remove(node.Client.Keywords(), node.Client.ID())
+	} else if openNode, exists := e.openClients[node.Client.ID()]; exists {
+		e.openList.Remove(openNode)
+		delete(e.openClients, node.Client.ID())
 	}
 }
 
@@ -136,12 +146,14 @@ func (e *Engine) processMatches() {
 		var match *Node
 
 		if len(node1.Client.Keywords()) == 0 {
-			match = e.findRandomMatch(node1.Client, next, &ghostEvictions)
+			match = e.findRandomMatch(node1.Client, &ghostEvictions)
 		} else {
-			if waitDuration < e.relaxedWait {
-				match = e.findBestMatch(node1.Client, &ghostEvictions)
-			} else {
-				match = e.findRandomMatch(node1.Client, next, &ghostEvictions)
+			match = e.findBestMatch(node1.Client, &ghostEvictions)
+			if match == nil {
+				match = e.findOpenMatch(node1.Client, &ghostEvictions)
+			}
+			if match == nil && waitDuration >= e.relaxedWait {
+				match = e.findRandomMatch(node1.Client, &ghostEvictions)
 			}
 		}
 
@@ -160,8 +172,29 @@ func (e *Engine) processMatches() {
 	}
 }
 
-func (e *Engine) findRandomMatch(c Client, start *Node, evictions *int) *Node {
-	curr := start
+// findOpenMatch looks for any untagged waiter willing to match anyone
+func (e *Engine) findOpenMatch(c Client, evictions *int) *Node {
+	curr := e.openList.Head
+	for curr != nil {
+		next := curr.Next
+		if curr.Client.ID() != c.ID() && !c.HasSkipped(curr.Client.ID()) {
+			if curr.Client.IsGhost() {
+				if *evictions < 5 {
+					e.cleanupNode(e.clients[curr.Client.ID()])
+					*evictions++
+				}
+				curr = next
+				continue
+			}
+			return e.clients[curr.Client.ID()] // resolve to canonical main-queue node
+		}
+		curr = next
+	}
+	return nil
+}
+
+func (e *Engine) findRandomMatch(c Client, evictions *int) *Node {
+	curr := e.queue.Head
 	for curr != nil {
 		next := curr.Next
 		if curr.Client.ID() != c.ID() && !c.HasSkipped(curr.Client.ID()) {

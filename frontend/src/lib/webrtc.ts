@@ -36,17 +36,32 @@ export class WebRTCManager {
     
     // Warm Booting Media Engine - Phase 4 optimization
     const stunUrl = import.meta.env.VITE_STUN_SERVER || 'stun:stun.l.google.com:19302';
-    this.pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: stunUrl as string },
-        { urls: 'stun:global.stun.twilio.com:3478' }
-      ]
-    });
+    const turnUrl = import.meta.env.VITE_TURN_SERVER;
+    const turnUser = import.meta.env.VITE_TURN_USERNAME;
+    const turnCred = import.meta.env.VITE_TURN_CREDENTIAL;
+
+    const iceServers: RTCIceServer[] = [
+      { urls: stunUrl as string },
+      { urls: 'stun:global.stun.twilio.com:3478' }
+    ];
+
+    if (turnUrl) {
+      iceServers.push({
+        urls: turnUrl as string,
+        username: turnUser,
+        credential: turnCred
+      });
+    }
+
+    this.pc = new RTCPeerConnection({ iceServers });
 
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => {
         this.pc!.addTrack(track, this.localStream!);
       });
+    } else {
+      this.pc.addTransceiver('video', { direction: 'recvonly' });
+      this.pc.addTransceiver('audio', { direction: 'recvonly' });
     }
 
     this.pc.ontrack = (event) => {
@@ -79,6 +94,12 @@ export class WebRTCManager {
              this.onConnectionStateChange('connected');
          } else if (state === 'failed' || state === 'closed') {
              this.onConnectionStateChange('failed');
+         } else if (state === 'disconnected') {
+             setTimeout(() => {
+               if (this.pc?.iceConnectionState === 'disconnected') {
+                 if (this.onConnectionStateChange) this.onConnectionStateChange('failed');
+               }
+             }, 5000);
          }
        }
     };
