@@ -35,8 +35,9 @@ export class WebRTCManager {
     this.candidateQueue = [];
     
     // Warm Booting Media Engine - Phase 4 optimization
+    const stunUrl = import.meta.env.VITE_STUN_SERVER || 'stun:stun.l.google.com:19302';
     this.pc = new RTCPeerConnection({
-      iceServers: [{ urls: import.meta.env.VITE_STUN_SERVER as string }]
+      iceServers: [{ urls: stunUrl as string }]
     });
 
     if (this.localStream) {
@@ -66,6 +67,17 @@ export class WebRTCManager {
          this.onConnectionStateChange(this.pc?.connectionState || 'disconnected');
        }
     };
+    
+    this.pc.oniceconnectionstatechange = () => {
+       if (this.onConnectionStateChange) {
+         const state = this.pc?.iceConnectionState;
+         if (state === 'connected' || state === 'completed') {
+             this.onConnectionStateChange('connected');
+         } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+             this.onConnectionStateChange('disconnected');
+         }
+       }
+    };
 
     if (isOffer) {
       this.pc.createOffer()
@@ -82,24 +94,28 @@ export class WebRTCManager {
   async handleSignal(signal: any) {
     if (!this.pc) return;
 
-    if (signal.type === 'offer') {
-      await this.pc.setRemoteDescription(new RTCSessionDescription(signal));
-      await this.flushCandidateQueue();
-      const answer = await this.pc.createAnswer();
-      await this.pc.setLocalDescription(answer);
-      socket.send('webrtc_signal', {
-        target_id: this.targetPeerId,
-        signal: this.pc.localDescription
-      });
-    } else if (signal.type === 'answer') {
-      await this.pc.setRemoteDescription(new RTCSessionDescription(signal));
-      await this.flushCandidateQueue();
-    } else if (signal.type === 'candidate') {
-      if (this.pc.remoteDescription) {
-        await this.pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
-      } else {
-        this.candidateQueue.push(signal.candidate);
+    try {
+      if (signal.type === 'offer') {
+        await this.pc.setRemoteDescription(new RTCSessionDescription(signal));
+        await this.flushCandidateQueue();
+        const answer = await this.pc.createAnswer();
+        await this.pc.setLocalDescription(answer);
+        socket.send('webrtc_signal', {
+          target_id: this.targetPeerId,
+          signal: this.pc.localDescription
+        });
+      } else if (signal.type === 'answer') {
+        await this.pc.setRemoteDescription(new RTCSessionDescription(signal));
+        await this.flushCandidateQueue();
+      } else if (signal.type === 'candidate') {
+        if (this.pc.remoteDescription) {
+          await this.pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        } else {
+          this.candidateQueue.push(signal.candidate);
+        }
       }
+    } catch (err) {
+      console.error("WebRTC Signal Error:", err);
     }
   }
 
