@@ -27,7 +27,10 @@ export function ChatRoom() {
   let isDragging = false;
   let dragOffset = { x: 0, y: 0 };
 
-  const keywords = searchParams.tags ? searchParams.tags.split(',') : [];
+  const tagsParam = searchParams.tags;
+  const keywords = typeof tagsParam === 'string' 
+    ? tagsParam.split(',') 
+    : (Array.isArray(tagsParam) ? tagsParam : []);
 
   onMount(async () => {
     // 1. Setup Video
