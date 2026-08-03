@@ -26,17 +26,20 @@ export class SocketManager {
         };
 
         this.ws.onmessage = (event) => {
-          // Keep-alives or empty messages
           if (!event.data) return;
           
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type) {
-              const typeHandlers = this.handlers.get(data.type) || [];
-              typeHandlers.forEach(h => h(data));
+          const lines = event.data.split('\n');
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const msg = JSON.parse(line);
+              if (msg.type) {
+                const typeHandlers = this.handlers.get(msg.type) || [];
+                typeHandlers.forEach(h => h(msg));
+              }
+            } catch (e) {
+              console.warn("Failed to parse WS line:", line, e);
             }
-          } catch(e) {
-             // not json
           }
         };
 
@@ -44,7 +47,7 @@ export class SocketManager {
           this.isConnecting = false;
           reject(err);
         };
-        
+
         this.ws.onclose = () => {
           this.isConnecting = false;
           const closeHandlers = this.handlers.get('close') || [];

@@ -245,21 +245,23 @@ func (c *Client) handleMessage(message []byte) {
 
 	case "webrtc_signal":
 		targetID, ok := payload["target_id"].(string)
-		if !ok {
+		if !ok || targetID == "" {
 			return
 		}
 		
+		sigPayload, _ := payload["signal"].(map[string]interface{})
+		sigType, _ := sigPayload["type"].(string)
+		log.Printf("Relaying webrtc_signal from %s to %s (type: %s)", c.id, targetID, sigType)
+		
 		targetClient := c.pool.Get(targetID)
 		if targetClient != nil {
-			relayMsg := map[string]interface{}{
-				"type":      "webrtc_signal",
-				"sender_id": c.id,
-				"signal":    payload["signal"],
-			}
-			b, _ := json.Marshal(relayMsg)
+			payload["sender_id"] = c.id
+			b, _ := json.Marshal(payload)
+			
 			select {
 			case targetClient.send <- b:
 			default:
+				log.Printf("client %s send buffer full, dropping signal", targetID)
 			}
 		}
 
