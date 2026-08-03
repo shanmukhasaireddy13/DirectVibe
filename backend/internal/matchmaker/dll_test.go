@@ -6,14 +6,18 @@ import (
 )
 
 type mockClient struct {
-	id       string
-	keywords []string
+	id          string
+	keywords    []string
+	enqueueTime time.Time
 }
 
-func (m *mockClient) ID() string                      { return m.id }
-func (m *mockClient) Keywords() []string              { return m.keywords }
-func (m *mockClient) EnqueueTime() time.Time          { return time.Now() }
-func (m *mockClient) SendMatch(otherID string, o bool) {}
+func (m *mockClient) ID() string               { return m.id }
+func (m *mockClient) Keywords() []string       { return m.keywords }
+func (m *mockClient) EnqueueTime() time.Time   { return m.enqueueTime }
+func (m *mockClient) SendMatch(otherID string, offer bool) {}
+func (m *mockClient) AddSkip(otherID string)   {}
+func (m *mockClient) HasSkipped(otherID string) bool { return false }
+func (m *mockClient) IsGhost() bool { return false }
 
 func TestDLL_PushAndPop(t *testing.T) {
 	dll := NewDLL()

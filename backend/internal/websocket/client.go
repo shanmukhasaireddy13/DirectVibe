@@ -37,6 +37,10 @@ type Client struct {
 
 	currentPeerID string
 	peerMu        sync.RWMutex
+
+	skipHistory map[string]time.Time
+	skipMu      sync.RWMutex
+	lastSeen    time.Time
 }
 
 func (c *Client) SetPeer(peerID string) {
@@ -57,10 +61,12 @@ func (c *Client) notifyPeerLeft() {
 		return
 	}
 	c.SetPeer("")
+	c.AddSkip(peerID)
 	
 	targetClient := c.pool.Get(peerID)
 	if targetClient != nil {
 		targetClient.SetPeer("")
+		targetClient.AddSkip(c.id)
 		msg := map[string]interface{}{
 			"type": "peer_left",
 		}
@@ -72,18 +78,74 @@ func (c *Client) notifyPeerLeft() {
 	}
 }
 
+func (c *Client) AddSkip(otherID string) {
+	c.skipMu.Lock()
+	c.skipHistory[otherID] = time.Now()
+	c.skipMu.Unlock()
+}
+
+func (c *Client) HasSkipped(otherID string) bool {
+	c.skipMu.RLock()
+	defer c.skipMu.RUnlock()
+	t, exists := c.skipHistory[otherID]
+	if !exists {
+		return false
+	}
+	if time.Since(t) > 10*time.Minute {
+		return false
+	}
+	return true
+}
+
+func (c *Client) updateLastSeen() {
+	c.peerMu.Lock()
+	c.lastSeen = time.Now()
+	c.peerMu.Unlock()
+}
+
+func (c *Client) IsGhost() bool {
+	c.peerMu.RLock()
+	t := c.lastSeen
+	c.peerMu.RUnlock()
+	return time.Since(t) > 30*time.Second
+}
+
+func (c *Client) janitor() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-ticker.C:
+			c.skipMu.Lock()
+			now := time.Now()
+			for id, t := range c.skipHistory {
+				if now.Sub(t) > 10*time.Minute {
+					delete(c.skipHistory, id)
+				}
+			}
+			c.skipMu.Unlock()
+		}
+	}
+}
+
 // NewClient creates a new client
 func NewClient(id string, conn *websocket.Conn, pool *Pool, engine *matchmaker.Engine) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Client{
-		id:     id,
-		conn:   conn,
-		pool:   pool,
-		engine: engine,
-		send:   make(chan []byte, 256),
-		ctx:    ctx,
-		cancel: cancel,
+	c := &Client{
+		id:          id,
+		conn:        conn,
+		pool:        pool,
+		engine:      engine,
+		send:        make(chan []byte, 256),
+		ctx:         ctx,
+		cancel:      cancel,
+		skipHistory: make(map[string]time.Time),
+		lastSeen:    time.Now(),
 	}
+	go c.janitor()
+	return c
 }
 
 // --- matchmaker.Client interface implementation ---
@@ -127,7 +189,11 @@ func (c *Client) ReadPump() {
 
 	c.conn.SetReadLimit(maxMessageSize)
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
-	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+	c.conn.SetPongHandler(func(string) error { 
+		c.conn.SetReadDeadline(time.Now().Add(pongWait))
+		c.updateLastSeen()
+		return nil 
+	})
 
 	for {
 		_, message, err := c.conn.ReadMessage()
@@ -137,6 +203,7 @@ func (c *Client) ReadPump() {
 			}
 			break
 		}
+		c.updateLastSeen()
 		c.handleMessage(message)
 	}
 }
@@ -168,12 +235,6 @@ func (c *Client) handleMessage(message []byte) {
 		c.engine.AddClient(c)
 
 	case "skip":
-		// Rate Limit: 1.5 seconds server-side
-		if time.Since(c.lastSkip) < 1500*time.Millisecond {
-			return 
-		}
-		c.lastSkip = time.Now()
-		
 		c.notifyPeerLeft()
 		c.engine.RemoveClient(c)
 		

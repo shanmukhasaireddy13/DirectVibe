@@ -34,3 +34,20 @@ func (idx *Index) Remove(keywords []string, clientID string) {
 		}
 	}
 }
+
+// GetSmallestBucket returns the smallest bucket out of the given keywords, minimizing K for searches
+func (idx *Index) GetSmallestBucket(keywords []string) map[string]*Node {
+	var smallest map[string]*Node
+	minSize := -1
+
+	for _, kw := range keywords {
+		if bucket, exists := idx.KeywordMap[kw]; exists {
+			size := len(bucket)
+			if minSize == -1 || size < minSize {
+				minSize = size
+				smallest = bucket
+			}
+		}
+	}
+	return smallest
+}

@@ -115,26 +115,33 @@ func (e *Engine) matcherLoop() {
 }
 
 func (e *Engine) processMatches() {
-	// Iterate through the oldest users first
-	for e.queue.Head != nil {
-		node1 := e.queue.Head
+	ghostEvictions := 0
+
+	curr := e.queue.Head
+	for curr != nil {
+		node1 := curr
+		next := curr.Next
+		
+		if node1.Client.IsGhost() {
+			if ghostEvictions < 5 {
+				e.cleanupNode(node1)
+				ghostEvictions++
+			}
+			curr = next
+			continue
+		}
+		
 		waitDuration := time.Since(node1.Client.EnqueueTime())
 
 		var match *Node
 
 		if len(node1.Client.Keywords()) == 0 {
-			// No keywords? Fallback immediately to oldest next user
-			match = node1.Next
+			match = e.findRandomMatch(node1.Client, next, &ghostEvictions)
 		} else {
-			if waitDuration < e.strictWait {
-				// Strict Strategy: Find match in same keyword bucket
-				match = e.findKeywordMatch(node1.Client)
-			} else if waitDuration < e.relaxedWait {
-				// Relaxed Strategy: (Simplified to finding any keyword match)
-				match = e.findKeywordMatch(node1.Client)
+			if waitDuration < e.relaxedWait {
+				match = e.findBestMatch(node1.Client, &ghostEvictions)
 			} else {
-				// Fallback Strategy: Drop keywords, pop oldest waiting user
-				match = node1.Next
+				match = e.findRandomMatch(node1.Client, next, &ghostEvictions)
 			}
 		}
 
@@ -143,27 +150,89 @@ func (e *Engine) processMatches() {
 			e.cleanupNode(node1)
 			e.cleanupNode(match)
 
-			// Tell the clients they matched
-			// Client 1 is the "Caller" (Offer), Client 2 is "Callee" (Answer)
 			node1.Client.SendMatch(match.Client.ID(), true)
 			match.Client.SendMatch(node1.Client.ID(), false)
+			
+			curr = e.queue.Head // Restart sweep from new head
 		} else {
-			// Oldest user can't find a match yet, break sweep until next tick
-			break
+			curr = next
 		}
 	}
 }
 
-func (e *Engine) findKeywordMatch(c Client) *Node {
-	// Look through the user's buckets
-	for _, kw := range c.Keywords() {
-		if bucket, exists := e.index.KeywordMap[kw]; exists {
-			for _, potentialMatch := range bucket {
-				if potentialMatch.Client.ID() != c.ID() {
-					return potentialMatch
+func (e *Engine) findRandomMatch(c Client, start *Node, evictions *int) *Node {
+	curr := start
+	for curr != nil {
+		next := curr.Next
+		if curr.Client.ID() != c.ID() && !c.HasSkipped(curr.Client.ID()) {
+			if curr.Client.IsGhost() {
+				if *evictions < 5 {
+					e.cleanupNode(curr)
+					*evictions++
 				}
+				curr = next
+				continue
+			}
+			return curr
+		}
+		curr = next
+	}
+	return nil
+}
+
+func (e *Engine) findBestMatch(c Client, evictions *int) *Node {
+	bucket := e.index.GetSmallestBucket(c.Keywords())
+	if bucket == nil {
+		return nil
+	}
+
+	var bestMatch *Node
+	bestScore := -1
+	var bestWait time.Duration
+
+	// Build a map of caller's keywords for fast O(1) intersection check
+	cKeywords := make(map[string]struct{})
+	for _, kw := range c.Keywords() {
+		cKeywords[kw] = struct{}{}
+	}
+
+	for _, potentialMatch := range bucket {
+		if potentialMatch.Client.ID() == c.ID() {
+			continue
+		}
+		
+		if c.HasSkipped(potentialMatch.Client.ID()) {
+			continue
+		}
+
+		if potentialMatch.Client.IsGhost() {
+			if *evictions < 5 {
+				e.cleanupNode(potentialMatch)
+				*evictions++
+			}
+			continue
+		}
+
+		score := 0
+		for _, kw := range potentialMatch.Client.Keywords() {
+			if _, exists := cKeywords[kw]; exists {
+				score++
+			}
+		}
+
+		wait := time.Since(potentialMatch.Client.EnqueueTime())
+
+		if score > bestScore {
+			bestScore = score
+			bestMatch = potentialMatch
+			bestWait = wait
+		} else if score == bestScore {
+			if wait > bestWait { // Break tie with oldest waiting
+				bestMatch = potentialMatch
+				bestWait = wait
 			}
 		}
 	}
-	return nil
+
+	return bestMatch
 }

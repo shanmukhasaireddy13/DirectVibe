@@ -9,4 +9,7 @@ type Client interface {
 	Keywords() []string
 	EnqueueTime() time.Time
 	SendMatch(otherID string, offer bool)
+	HasSkipped(otherID string) bool
+	AddSkip(otherID string)
+	IsGhost() bool
 }

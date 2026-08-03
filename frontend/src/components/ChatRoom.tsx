@@ -21,6 +21,7 @@ export function ChatRoom() {
   const [state, setState] = createSignal<ChatState>('idle');
   const [messages, setMessages] = createSignal<ChatMessage[]>([]);
   const [chatInput, setChatInput] = createSignal('');
+  const [isSkipping, setIsSkipping] = createSignal(false);
   
   // Drag state for PIP
   const [pipPos, setPipPos] = createSignal<{left?: number, top?: number, right?: number, bottom?: number}>({ right: 24, bottom: 24 });
@@ -124,6 +125,10 @@ export function ChatRoom() {
   };
   
   const handleSkip = () => {
+    if (isSkipping()) return;
+    setIsSkipping(true);
+    setTimeout(() => setIsSkipping(false), 800);
+
     webrtc.close();
     if (remoteVideoRef) remoteVideoRef.srcObject = null;
     socket.send('skip');
@@ -224,7 +229,7 @@ export function ChatRoom() {
           <button class="btn stop" onClick={handleStop} disabled={state() === 'stopped'}>
             Stop
           </button>
-          <button class="btn danger" onClick={handleSkip} disabled={state() === 'stopped'}>
+          <button class="btn danger" onClick={handleSkip} disabled={state() === 'stopped' || isSkipping()}>
             Skip
           </button>
         </div>

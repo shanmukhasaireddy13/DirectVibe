@@ -19,13 +19,20 @@ type MockClient struct {
 
 func (m *MockClient) ID() string { return m.id }
 func (m *MockClient) Keywords() []string { return m.keywords }
-func (m *MockClient) EnqueueTime() time.Time { return m.enqueueTime }
+func (m *MockClient) EnqueueTime() time.Time {
+	return m.enqueueTime
+}
+
 func (m *MockClient) SendMatch(otherID string, offer bool) {
 	m.mu.Lock()
 	m.matchedWith = otherID
 	m.isOffer = offer
 	m.mu.Unlock()
 }
+
+func (m *MockClient) AddSkip(otherID string) {}
+func (m *MockClient) HasSkipped(otherID string) bool { return false }
+func (m *MockClient) IsGhost() bool { return false }
 
 func TestEngine_ConcurrencyMemoryLeak(t *testing.T) {
 	engine := NewEngine(1, 2)
