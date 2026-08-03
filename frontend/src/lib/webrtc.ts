@@ -58,6 +58,7 @@ export class WebRTCManager {
 
     this.pc.onicecandidate = (event) => {
       if (event.candidate) {
+        console.log("Sending ICE Candidate");
         socket.send('webrtc_signal', {
           target_id: this.targetPeerId,
           signal: { type: 'candidate', candidate: event.candidate }
@@ -83,34 +84,43 @@ export class WebRTCManager {
     };
 
     if (isOffer) {
+      console.log("Creating WebRTC Offer...");
       this.pc.createOffer()
         .then(offer => this.pc!.setLocalDescription(offer))
         .then(() => {
+          console.log("Sending WebRTC Offer");
           socket.send('webrtc_signal', {
             target_id: this.targetPeerId,
             signal: this.pc!.localDescription
           });
-        });
+        }).catch(err => console.error("Error creating offer:", err));
     }
   }
 
   async handleSignal(signal: any) {
     if (!this.pc) return;
+    
+    console.log("Received WebRTC Signal:", signal.type);
 
     try {
       if (signal.type === 'offer') {
+        console.log("Setting Remote Description (Offer)");
         await this.pc.setRemoteDescription(new RTCSessionDescription(signal));
         await this.flushCandidateQueue();
+        console.log("Creating Answer");
         const answer = await this.pc.createAnswer();
         await this.pc.setLocalDescription(answer);
+        console.log("Sending Answer");
         socket.send('webrtc_signal', {
           target_id: this.targetPeerId,
           signal: this.pc.localDescription
         });
       } else if (signal.type === 'answer') {
+        console.log("Setting Remote Description (Answer)");
         await this.pc.setRemoteDescription(new RTCSessionDescription(signal));
         await this.flushCandidateQueue();
       } else if (signal.type === 'candidate') {
+        console.log("Received ICE Candidate");
         if (this.pc.remoteDescription) {
           await this.pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
         } else {
@@ -118,7 +128,7 @@ export class WebRTCManager {
         }
       }
     } catch (err) {
-      console.error("WebRTC Signal Error:", err);
+      console.error("WebRTC Signal Error:", err, signal);
     }
   }
 

@@ -80,6 +80,7 @@ export function ChatRoom() {
   });
 
   const handleMatchFound = (data: any) => {
+    console.log("Match Found! Peer ID:", data.peer_id, "Is Offer:", data.offer);
     setState('connecting');
     webrtc.createPeerConnection(data.peer_id, data.offer);
   };
