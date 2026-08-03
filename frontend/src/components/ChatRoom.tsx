@@ -86,7 +86,11 @@ export function ChatRoom() {
   };
 
   const handleWebRTCSignal = async (data: any) => {
-    if (data.sender_id !== webrtc.targetPeerId) return;
+    console.log("Raw WebRTC Signal Received:", data);
+    if (data.sender_id !== webrtc.targetPeerId) {
+      console.warn("Ignoring signal from unknown peer. Expected:", webrtc.targetPeerId, "Got:", data.sender_id);
+      return;
+    }
     await webrtc.handleSignal(data.signal);
   };
 
