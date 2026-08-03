@@ -86,12 +86,18 @@ export class WebRTCManager {
     if (isOffer) {
       console.log("Creating WebRTC Offer...");
       this.pc.createOffer()
-        .then(offer => this.pc!.setLocalDescription(offer))
+        .then(offer => {
+          console.log("Offer generated:", offer.type);
+          return this.pc!.setLocalDescription(offer);
+        })
         .then(() => {
-          console.log("Sending WebRTC Offer");
+          console.log("Sending WebRTC Offer (Manual Serialize)");
           socket.send('webrtc_signal', {
             target_id: this.targetPeerId,
-            signal: this.pc!.localDescription
+            signal: {
+              type: this.pc!.localDescription!.type,
+              sdp: this.pc!.localDescription!.sdp
+            }
           });
         }).catch(err => console.error("Error creating offer:", err));
     }
@@ -110,10 +116,13 @@ export class WebRTCManager {
         console.log("Creating Answer");
         const answer = await this.pc.createAnswer();
         await this.pc.setLocalDescription(answer);
-        console.log("Sending Answer");
+        console.log("Sending Answer (Manual Serialize)");
         socket.send('webrtc_signal', {
           target_id: this.targetPeerId,
-          signal: this.pc.localDescription
+          signal: {
+            type: this.pc.localDescription!.type,
+            sdp: this.pc.localDescription!.sdp
+          }
         });
       } else if (signal.type === 'answer') {
         console.log("Setting Remote Description (Answer)");
