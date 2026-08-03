@@ -107,7 +107,8 @@ func (c *Client) IsGhost() bool {
 	c.peerMu.RLock()
 	t := c.lastSeen
 	c.peerMu.RUnlock()
-	return time.Since(t) > 30*time.Second
+	// Must be greater than pingPeriod (54s) + margin
+	return time.Since(t) > 65*time.Second
 }
 
 func (c *Client) janitor() {

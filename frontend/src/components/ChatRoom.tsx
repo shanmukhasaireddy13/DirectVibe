@@ -81,7 +81,7 @@ export function ChatRoom() {
 
   const handleMatchFound = (data: any) => {
     setState('connecting');
-    webrtc.createPeerConnection(data.peer_id, data.is_offer);
+    webrtc.createPeerConnection(data.peer_id, data.offer);
   };
 
   const handleWebRTCSignal = async (data: any) => {
