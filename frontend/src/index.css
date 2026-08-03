@@ -79,6 +79,7 @@
 
 html, body {
   height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -93,7 +94,9 @@ body {
 .app-container {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .main-content-wrapper {
@@ -101,6 +104,8 @@ body {
   display: flex;
   flex-direction: column;
   position: relative;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* Header & Footer */
@@ -292,13 +297,15 @@ body {
   display: flex;
   position: relative;
   overflow: hidden;
-  height: calc(100vh - 128px);
+  height: 100%;
+  width: 100%;
   min-height: 0;
   min-width: 0;
 }
 @media (max-width: 768px) {
   .chat-room {
     flex-direction: column;
+    overflow-y: auto;
   }
 }
 
