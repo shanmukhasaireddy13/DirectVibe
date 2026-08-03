@@ -33,12 +33,17 @@ export function ChatRoom() {
     : (Array.isArray(tagsParam) ? tagsParam : []);
 
   onMount(async () => {
-    // 1. Setup Video
-    webrtc.getLocalStream().then(stream => {
-      localVideoRef.srcObject = stream;
-    });
+    // 1. Setup Video (Wait for camera permissions BEFORE joining queue!)
+    try {
+      const stream = await webrtc.getLocalStream();
+      if (localVideoRef) localVideoRef.srcObject = stream;
+    } catch (err) {
+      console.error("Failed to access camera", err);
+      // Still allow them to join, but they won't transmit video
+    }
+
     webrtc.onRemoteTrack = (stream) => {
-      remoteVideoRef.srcObject = stream;
+      if (remoteVideoRef) remoteVideoRef.srcObject = stream;
     };
 
     socket.on('match_found', handleMatchFound);
