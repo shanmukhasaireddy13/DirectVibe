@@ -6,7 +6,7 @@ export class SocketManager {
   private isConnecting = false;
   private url: string;
 
-  constructor(url: string = import.meta.env.VITE_WS_URL as string) {
+  constructor(url: string = (import.meta.env.VITE_WS_URL as string) || 'ws://localhost:8080/ws') {
     this.url = url;
   }
 
