@@ -41,10 +41,10 @@ export function ChatRoom() {
       remoteVideoRef.srcObject = stream;
     };
 
-    // 2. Setup Sockets
     socket.on('match_found', handleMatchFound);
     socket.on('webrtc_signal', handleWebRTCSignal);
     socket.on('chat_message', handleIncomingMessage);
+    socket.on('peer_left', handlePeerLeft);
 
     webrtc.onConnectionStateChange = (connState) => {
       if (connState === 'connected') {
@@ -66,6 +66,7 @@ export function ChatRoom() {
     socket.off('match_found', handleMatchFound);
     socket.off('webrtc_signal', handleWebRTCSignal);
     socket.off('chat_message', handleIncomingMessage);
+    socket.off('peer_left', handlePeerLeft);
     // Properly clean up connections when navigating away
     socket.disconnect();
     webrtc.close();
@@ -80,6 +81,16 @@ export function ChatRoom() {
   const handleWebRTCSignal = async (data: any) => {
     if (data.sender_id !== webrtc.targetPeerId) return;
     await webrtc.handleSignal(data.signal);
+  };
+
+  const handlePeerLeft = () => {
+    if (state() === 'matched' || state() === 'connecting') {
+      webrtc.close();
+      if (remoteVideoRef) remoteVideoRef.srcObject = null;
+      setState('queued');
+      setMessages([]);
+      socket.send('skip'); // Re-queue ourselves instantly
+    }
   };
 
   const handleIncomingMessage = (data: any) => {

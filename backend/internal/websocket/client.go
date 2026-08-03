@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -33,6 +34,42 @@ type Client struct {
 
 	ctx         context.Context
 	cancel      context.CancelFunc
+
+	currentPeerID string
+	peerMu        sync.RWMutex
+}
+
+func (c *Client) SetPeer(peerID string) {
+	c.peerMu.Lock()
+	c.currentPeerID = peerID
+	c.peerMu.Unlock()
+}
+
+func (c *Client) GetPeer() string {
+	c.peerMu.RLock()
+	defer c.peerMu.RUnlock()
+	return c.currentPeerID
+}
+
+func (c *Client) notifyPeerLeft() {
+	peerID := c.GetPeer()
+	if peerID == "" {
+		return
+	}
+	c.SetPeer("")
+	
+	targetClient := c.pool.Get(peerID)
+	if targetClient != nil {
+		targetClient.SetPeer("")
+		msg := map[string]interface{}{
+			"type": "peer_left",
+		}
+		b, _ := json.Marshal(msg)
+		select {
+		case targetClient.send <- b:
+		default:
+		}
+	}
 }
 
 // NewClient creates a new client
@@ -61,6 +98,7 @@ func (c *Client) EnqueueTime() time.Time {
 	return c.enqueueTime
 }
 func (c *Client) SendMatch(otherID string, offer bool) {
+	c.SetPeer(otherID)
 	msg := map[string]interface{}{
 		"type":     "match_found",
 		"peer_id":  otherID,
@@ -81,6 +119,7 @@ func (c *Client) ReadPump() {
 	defer func() {
 		// Clean up on disconnect
 		c.cancel() // Immediately kill the WritePump goroutine
+		c.notifyPeerLeft()
 		c.engine.RemoveClient(c)
 		c.pool.Unregister(c)
 		c.conn.Close()
@@ -135,6 +174,7 @@ func (c *Client) handleMessage(message []byte) {
 		}
 		c.lastSkip = time.Now()
 		
+		c.notifyPeerLeft()
 		c.engine.RemoveClient(c)
 		
 		// Immediately re-enqueue to find a new match
