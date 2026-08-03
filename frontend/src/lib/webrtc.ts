@@ -77,8 +77,8 @@ export class WebRTCManager {
          const state = this.pc?.iceConnectionState;
          if (state === 'connected' || state === 'completed') {
              this.onConnectionStateChange('connected');
-         } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
-             this.onConnectionStateChange('disconnected');
+         } else if (state === 'failed' || state === 'closed') {
+             this.onConnectionStateChange('failed');
          }
        }
     };

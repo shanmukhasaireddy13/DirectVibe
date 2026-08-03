@@ -23,6 +23,8 @@ export function ChatRoom() {
   const [chatInput, setChatInput] = createSignal('');
   const [isSkipping, setIsSkipping] = createSignal(false);
   
+  let connectionTimeout: any;
+  
   // Drag state for PIP
   const [pipPos, setPipPos] = createSignal<{left?: number, top?: number, right?: number, bottom?: number}>({ right: 24, bottom: 24 });
   let isDragging = false;
@@ -54,9 +56,11 @@ export function ChatRoom() {
 
     webrtc.onConnectionStateChange = (connState) => {
       if (connState === 'connected') {
+        clearTimeout(connectionTimeout);
         setState('matched');
-      } else if (connState === 'disconnected' || connState === 'failed' || connState === 'closed') {
+      } else if (connState === 'failed' || connState === 'closed') {
         if (state() === 'matched' || state() === 'connecting') {
+          console.warn("WebRTC Connection Failed/Closed, skipping...");
           handleSkip();
         }
       }
@@ -74,15 +78,25 @@ export function ChatRoom() {
     socket.off('chat_message', handleIncomingMessage);
     socket.off('peer_left', handlePeerLeft);
     // Properly clean up connections when navigating away
+    clearTimeout(connectionTimeout);
     socket.disconnect();
     webrtc.close();
     webrtc.stopLocalStream();
   });
 
   const handleMatchFound = (data: any) => {
-    console.log("Match Found! Peer ID:", data.peer_id, "Is Offer:", data.is_offer);
+    console.log("Match Found! Peer ID:", data.peer_id, "Is Offer:", data.offer || data.is_offer);
     setState('connecting');
-    webrtc.createPeerConnection(data.peer_id, data.is_offer);
+    webrtc.createPeerConnection(data.peer_id, data.offer || data.is_offer);
+    
+    // Fallback timeout: if WebRTC fails to connect within 12 seconds, skip and find someone else
+    clearTimeout(connectionTimeout);
+    connectionTimeout = setTimeout(() => {
+      if (state() === 'connecting') {
+        console.warn("Connection timed out! Skipping to next peer...");
+        handleSkip();
+      }
+    }, 15000);
   };
 
   const handleWebRTCSignal = async (data: any) => {
