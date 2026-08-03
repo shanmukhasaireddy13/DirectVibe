@@ -37,7 +37,10 @@ export class WebRTCManager {
     // Warm Booting Media Engine - Phase 4 optimization
     const stunUrl = import.meta.env.VITE_STUN_SERVER || 'stun:stun.l.google.com:19302';
     this.pc = new RTCPeerConnection({
-      iceServers: [{ urls: stunUrl as string }]
+      iceServers: [
+        { urls: stunUrl as string },
+        { urls: 'stun:global.stun.twilio.com:3478' }
+      ]
     });
 
     if (this.localStream) {

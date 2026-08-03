@@ -42,13 +42,8 @@ export function ChatRoom() {
     };
 
     // 2. Setup Sockets
-    socket.on('match_found', async (data: any) => {
-      setState('connecting');
-      webrtc.createPeerConnection(data.peer_id, data.is_offer);
-    });
-    socket.on('webrtc_signal', async (data: any) => {
-      await webrtc.handleSignal(data.signal);
-    });
+    socket.on('match_found', handleMatchFound);
+    socket.on('webrtc_signal', handleWebRTCSignal);
     socket.on('chat_message', handleIncomingMessage);
 
     webrtc.onConnectionStateChange = (connState) => {
@@ -68,6 +63,8 @@ export function ChatRoom() {
   });
 
   onCleanup(() => {
+    socket.off('match_found', handleMatchFound);
+    socket.off('webrtc_signal', handleWebRTCSignal);
     socket.off('chat_message', handleIncomingMessage);
     // Properly clean up connections when navigating away
     socket.disconnect();
@@ -75,7 +72,18 @@ export function ChatRoom() {
     webrtc.stopLocalStream();
   });
 
+  const handleMatchFound = (data: any) => {
+    setState('connecting');
+    webrtc.createPeerConnection(data.peer_id, data.is_offer);
+  };
+
+  const handleWebRTCSignal = async (data: any) => {
+    if (data.sender_id !== webrtc.targetPeerId) return;
+    await webrtc.handleSignal(data.signal);
+  };
+
   const handleIncomingMessage = (data: any) => {
+    if (data.sender_id !== webrtc.targetPeerId) return;
     setMessages(prev => [...prev, { sender: 'peer', text: data.text }]);
     scrollToBottom();
   };
@@ -101,6 +109,7 @@ export function ChatRoom() {
   
   const handleSkip = () => {
     webrtc.close();
+    if (remoteVideoRef) remoteVideoRef.srcObject = null;
     socket.send('skip');
     setState('queued');
     setMessages([]);
@@ -108,6 +117,7 @@ export function ChatRoom() {
 
   const handleStop = () => {
     webrtc.close();
+    if (remoteVideoRef) remoteVideoRef.srcObject = null;
     socket.disconnect(); // Disconnect entirely from queue to stop
     setState('stopped');
   };
