@@ -174,8 +174,12 @@ export function ChatRoom() {
   };
 
   const handlePointerDown = (e: PointerEvent) => {
-    isDragging = true;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    // Allow native CSS resize when dragging bottom-right corner area (24px)
+    const isResizeArea = (e.clientX > rect.right - 24) && (e.clientY > rect.bottom - 24);
+    if (isResizeArea) return;
+
+    isDragging = true;
     dragOffset = {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top
@@ -186,8 +190,8 @@ export function ChatRoom() {
   const handlePointerMove = (e: PointerEvent) => {
     if (!isDragging) return;
     const target = e.currentTarget as HTMLElement;
-    const width = target.offsetWidth || 180;
-    const height = target.offsetHeight || 240;
+    const width = target.offsetWidth || 240;
+    const height = target.offsetHeight || 135;
 
     let newLeft = e.clientX - dragOffset.x;
     let newTop = e.clientY - dragOffset.y;
@@ -203,7 +207,9 @@ export function ChatRoom() {
 
   const handlePointerUp = (e: PointerEvent) => {
     isDragging = false;
-    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
   };
 
   return (
@@ -235,12 +241,8 @@ export function ChatRoom() {
             </div>
           </Show>
 
-          <video 
-            ref={localVideoRef} 
-            class="local-video" 
-            autoplay 
-            playsinline 
-            muted 
+          <div 
+            class="local-video-wrapper"
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
@@ -252,7 +254,16 @@ export function ChatRoom() {
                cursor: isDragging ? 'grabbing' : 'grab',
                position: (pipPos().left !== undefined || pipPos().top !== undefined) ? 'fixed' : 'absolute'
             }}
-          />
+          >
+            <video 
+              ref={localVideoRef} 
+              class="local-video" 
+              autoplay 
+              playsinline 
+              muted 
+            />
+            <div class="resize-handle-icon" title="Drag to resize" />
+          </div>
         </div>
 
         <div class="controls-bar">
