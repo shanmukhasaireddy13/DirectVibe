@@ -91,7 +91,7 @@ func (c *Client) HasSkipped(otherID string) bool {
 	if !exists {
 		return false
 	}
-	if time.Since(t) > 10*time.Minute {
+	if time.Since(t) > 5*time.Second {
 		return false
 	}
 	return true
@@ -121,7 +121,7 @@ func (c *Client) janitor() {
 			c.skipMu.Lock()
 			now := time.Now()
 			for id, t := range c.skipHistory {
-				if now.Sub(t) > 10*time.Minute {
+				if now.Sub(t) > 5*time.Second {
 					delete(c.skipHistory, id)
 				}
 			}
